@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Java模試対策</title>
+  <style>
+    body { font-family: sans-serif; padding: 1em; margin: 0; }
+    .hidden { display: none; }
+    .btn { padding: 0.5em 1em; margin: 0.5em; font-size: 1em; cursor: pointer; }
+    .correct { background-color: #c8facc; }
+    .incorrect { background-color: #fdd; }
+    .question-box { margin: 1em 0; white-space: pre-line;}
+    .answer-btn { display: block; margin: 0.5em 0; padding: 0.5em; width: 100%; }
+    .info { font-size: 0.9em; color: #555; margin-top: 0.5em; }
+    #question-list { margin-top: 2em; border-top: 1px solid #ccc; padding-top: 1em; }
+    @media (max-width: 600px) {
+      .answer-btn { font-size: 1em; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- スタート画面 -->
+  <div id="start-screen">
+    <h1>Java 模試対策</h1>
+    <button class="btn" onclick="startQuiz()">すぐ解く</button>
+    <button class="btn" onclick="reviewQuiz()">復習する</button>
+  </div>
+
+  <!-- クイズ画面 -->
+  <div id="quiz-screen" class="hidden">
+    <div id="question-container"></div>
+    <div id="explanation" class="info"></div>
+    <div id="stats" class="info"></div>
+    <label><input type="checkbox" id="mark-review"> 正解でも復習に回す</label>
+    <br />
+    <button class="btn" onclick="nextQuestion()">次の問題へ</button>
+    <button class="btn" onclick="goToStart()">途中終了してスタートへ</button>
+  </div>
+
+  <!-- 問題追加・編集画面 -->
+  <div id="add-question-screen">
+    <h2>問題を追加・編集</h2>
+    <textarea id="new-question" placeholder="問題文" rows="3" cols="40"></textarea><br />
+    <input type="text" class="new-choice" placeholder="選択肢1" size="40"><br />
+    <input type="text" class="new-choice" placeholder="選択肢2" size="40"><br />
+    <input type="text" class="new-choice" placeholder="選択肢3" size="40"><br />
+    <input type="text" class="new-choice" placeholder="選択肢4" size="40"><br />
+    正解（1〜4）: <input type="number" id="new-correct" min="1" max="4"><br />
+    <input type="text" id="new-explanation" placeholder="解説文" size="40"><br />
+    <button id="add-btn" class="btn" onclick="addNewQuestion()">追加</button>
+    <button id="update-btn" class="btn" onclick="updateQuestion()" style="display:none;">更新</button>
+  </div>
+
+  <!-- 問題一覧表示エリア（編集ボタン付き） -->
+  <div id="question-list"></div>
+
+  <script>
+    // 問題データ配列（最初は空、loadQuestionsで初期化）
+    let questions = [];
+
+    // localStorageから問題を読み込む
+    function loadQuestions() {
+      const stored = localStorage.getItem("java_mock_questions");
+      if (stored) {
+        questions = JSON.parse(stored);
+      } else {
+        // localStorageになければ初期問題をセット
+        questions = [
+          {
+            question: "staticなメソッドはインスタンス変数を直接参照できるか？",
+            choices: [
+              "できる",
+              "できない",
+              "条件付きでできる",
+              "クラスによる"
+            ],
+            correct: 1,
+            explanation: "staticメソッドはインスタンス変数を直接参照できません。インスタンスをnewで生成してから使います。",
+            views: 0,
+            misses: 0,
+            review: false
+          }
+        ];
+        // 初期問題をlocalStorageに保存しておく
+        localStorage.setItem("java_mock_questions", JSON.stringify(questions));
+      }
+    }
+
+    let currentIndex = 0;
+    let reviewMode = false;
+    let editIndex = -1; // 編集中の問題番号（-1は未編集中）
+
+    // 配列のシャッフル関数（Fisher-Yates）
+    function shuffle(array) {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+    }
+
+    // クイズ開始（通常モード）
+    function startQuiz() {
+      reviewMode = false;
+      currentIndex = 0;
+      shuffle(questions);
+      document.getElementById("start-screen").classList.add("hidden");
+      document.getElementById("quiz-screen").classList.remove("hidden");
+      showQuestion();
+    }
+
+    // クイズ開始（復習モード）
+    function reviewQuiz() {
+      reviewMode = true;
+      currentIndex = 0;
+      document.getElementById("start-screen").classList.add("hidden");
+      document.getElementById("quiz-screen").classList.remove("hidden");
+      showQuestion();
+    }
+
+    // 問題を画面に表示する
+    function showQuestion() {
+      const container = document.getElementById("question-container");
+      const qlist = reviewMode ? questions.filter(q => q.misses > 0 || q.review) : questions;
+
+      if (qlist.length === 0) {
+        alert("表示できる問題がありません。スタート画面に戻ります。");
+        goToStart();
+        return;
+      }
+      if (currentIndex >= qlist.length) {
+        alert("全ての問題が終了しました。スタート画面に戻ります。");
+        goToStart();
+        return;
+      }
+
+      const q = qlist[currentIndex];
+      q.views++;
+      const shuffledChoices = [...q.choices].map((choice, i) => ({ text: choice, index: i }));
+      shuffle(shuffledChoices);
+
+      container.innerHTML = `<div class="question-box"><strong>Q${currentIndex + 1}:</strong> ${q.question}</div>` +
+        shuffledChoices.map(choice => `
+          <button class="answer-btn" onclick="checkAnswer(${choice.index}, ${q.correct}, this)">${choice.text}</button>`
+        ).join('');
+
+      document.getElementById("explanation").textContent = "";
+      document.getElementById("stats").textContent = `この問題でのミス: ${q.misses} 回 / 表示回数: ${q.views} 回`;
+      document.getElementById("mark-review").checked = q.review;
+
+      // 問題ビューの変更をlocalStorageに保存（ミス数、表示回数など）
+      saveQuestions();
+    }
+
+    // 回答チェック（選択肢クリック時）
+  function checkAnswer(index, correct, btn) {
+  const qlist = reviewMode ? questions.filter(q => q.misses > 0 || q.review) : questions;
+  const q = qlist[currentIndex];
+  const buttons = document.querySelectorAll(".answer-btn");
+  buttons.forEach(b => b.disabled = true);
+
+  if (index === correct) {
+    btn.classList.add("correct");
+
+    if (reviewMode) {
+      // 復習モードで正解したら復習対象から外しmissesもリセット
+      q.review = false;
+      q.misses = 0;
+    } else {
+      // 通常モードではチェックボックスの状態を保存
+      q.review = document.getElementById("mark-review").checked;
+    }
+
+  } else {
+    btn.classList.add("incorrect");
+    q.misses++;
+  }
+
+  document.getElementById("explanation").textContent = q.explanation;
+
+  saveQuestions();
+
+  if (index === correct) {
+    setTimeout(() => {
+      if (reviewMode) {
+        // 復習モードの問題リスト更新
+        const newQlist = questions.filter(q => q.misses > 0 || q.review);
+
+        if (newQlist.length === 0) {
+          alert("復習問題はすべてクリアしました。スタート画面に戻ります。");
+          goToStart();
+          return;
+        }
+
+        // currentIndexが範囲外なら調整
+        if (currentIndex >= newQlist.length) {
+          currentIndex = newQlist.length - 1;
+        }
+
+      } else {
+        currentIndex++;
+        if (currentIndex >= questions.length) {
+          alert("全ての問題が終了しました。スタート画面に戻ります。");
+          goToStart();
+          return;
+        }
+      }
+      showQuestion();
+    }, 1000);
+  }
+}
+
+
+
+    // 次の問題へ
+    function nextQuestion() {
+      currentIndex++;
+      showQuestion();
+    }
+
+    // スタート画面へ戻る
+    function goToStart() {
+      document.getElementById("quiz-screen").classList.add("hidden");
+      document.getElementById("start-screen").classList.remove("hidden");
+    }
+
+    // 問題一覧表示関数（編集ボタン付き）
+    function renderQuestionList() {
+      const container = document.getElementById("question-list");
+      if (!container) return;
+
+      if (questions.length === 0) {
+        container.innerHTML = "<p>問題がありません。</p>";
+        return;
+      }
+
+      container.innerHTML = "<h2>問題一覧（編集ボタンをクリックしてください）</h2>" + 
+        questions.map((q, i) => `
+          <div style="margin-bottom: 0.5em; border-bottom: 1px solid #ccc; padding-bottom: 0.3em;">
+            <strong>Q${i+1}:</strong> ${q.question}
+            <button class="btn" style="font-size:0.8em; margin-left: 1em;" onclick="loadQuestionForEdit(${i})">編集</button>
+          </div>
+        `).join("");
+    }
+
+    // 編集対象の問題をフォームに読み込む
+    function loadQuestionForEdit(index) {
+      editIndex = index;
+      const q = questions[index];
+      document.getElementById("new-question").value = q.question;
+      const choices = document.getElementsByClassName("new-choice");
+      for(let i=0; i<choices.length; i++) {
+        choices[i].value = q.choices[i] || "";
+      }
+      document.getElementById("new-correct").value = q.correct + 1;
+      document.getElementById("new-explanation").value = q.explanation;
+
+      // ボタン表示切替
+      document.getElementById("add-btn").style.display = "none";
+      document.getElementById("update-btn").style.display = "inline-block";
+
+      // 編集フォームへスクロール
+      document.getElementById("add-question-screen").scrollIntoView({behavior:"smooth"});
+    }
+
+    // 編集後の問題を更新する
+    function updateQuestion() {
+      if (editIndex < 0) {
+        alert("編集する問題が選択されていません");
+        return;
+      }
+
+      const question = document.getElementById("new-question").value;
+      const choices = Array.from(document.getElementsByClassName("new-choice"))
+        .map(input => input.value).filter(text => text.trim() !== "");
+      const correct = parseInt(document.getElementById("new-correct").value) - 1;
+      const explanation = document.getElementById("new-explanation").value;
+
+      if (!question || choices.length < 2 || isNaN(correct) || correct < 0 || correct >= choices.length) {
+        alert("入力内容を確認してください（問題文・選択肢2つ以上・正解番号）");
+        return;
+      }
+
+      // 既存の問題を更新（ミス回数や表示回数は保持）
+      questions[editIndex] = {
+        ...questions[editIndex],
+        question,
+        choices,
+        correct,
+        explanation,
+      };
+
+      // localStorageに保存
+      saveQuestions();
+
+      alert("問題を更新しました！");
+      clearForm();
+
+      editIndex = -1;
+      document.getElementById("add-btn").style.display = "inline-block";
+      document.getElementById("update-btn").style.display = "none";
+
+      renderQuestionList();
+    }
+
+    // 新規問題を追加する
+    function addNewQuestion() {
+      const question = document.getElementById("new-question").value;
+      const choices = Array.from(document.getElementsByClassName("new-choice"))
+        .map(input => input.value).filter(text => text.trim() !== "");
+      const correct = parseInt(document.getElementById("new-correct").value) - 1;
+      const explanation = document.getElementById("new-explanation").value;
+
+      if (!question || choices.length < 2 || isNaN(correct) || correct < 0 || correct >= choices.length) {
+        alert("入力内容を確認してください（問題文・選択肢2つ以上・正解番号）");
+        return;
+      }
+
+      questions.push({
+        question,
+        choices,
+        correct,
+        explanation,
+        views: 0,
+        misses: 0,
+        review: false
+      });
+
+      // localStorageに保存
+      saveQuestions();
+
+      clearForm();
+      alert("問題を追加しました！");
+      renderQuestionList();
+    }
+
+    // フォームの内容をクリアする
+    function clearForm() {
+      document.getElementById("new-question").value = "";
+      const choices = document.getElementsByClassName("new-choice");
+      for(let i=0; i<choices.length; i++) {
+        choices[i].value = "";
+      }
+      document.getElementById("new-correct").value = "";
+      document.getElementById("new-explanation").value = "";
+    }
+
+    // localStorageに問題データを保存
+    function saveQuestions() {
+      localStorage.setItem("java_mock_questions", JSON.stringify(questions));
+    }
+
+    // ページ読み込み時に問題を読み込み、問題一覧表示
+    window.onload = () => {
+      loadQuestions();
+      renderQuestionList();
+    };
+  </script>
+
+</body>
+</html>
